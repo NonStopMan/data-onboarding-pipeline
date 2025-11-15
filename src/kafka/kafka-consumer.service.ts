@@ -10,6 +10,7 @@ import {
   OnboardingStatus,
   EntityType,
 } from '../entities';
+import { CustomerDatabaseService } from '../database/customer-database.service';
 
 @Injectable()
 export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
@@ -19,12 +20,9 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private configService: ConfigService,
-    @InjectRepository(Site)
-    private siteRepository: Repository<Site>,
-    @InjectRepository(Building)
-    private buildingRepository: Repository<Building>,
     @InjectRepository(OnboardingRequest)
     private onboardingRequestRepository: Repository<OnboardingRequest>,
+    private customerDatabaseService: CustomerDatabaseService,
   ) {
     this.kafka = new Kafka({
       clientId: this.configService.get<string>('KAFKA_CLIENT_ID', 'data-onboarding-api'),
@@ -112,8 +110,22 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
 
   private async processSite(requestId: string, data: any): Promise<void> {
     try {
-      const site = this.siteRepository.create(data);
-      const savedSite = (await this.siteRepository.save(site)) as unknown as Site;
+      // Get customer ID from onboarding request
+      const request = await this.onboardingRequestRepository.findOne({
+        where: { id: requestId },
+      });
+
+      if (!request) {
+        throw new Error(`Onboarding request not found: ${requestId}`);
+      }
+
+      // Get customer-specific repository
+      const siteRepository = await this.customerDatabaseService.getSiteRepository(
+        request.customerId,
+      );
+
+      const site = siteRepository.create(data);
+      const savedSite = (await siteRepository.save(site)) as unknown as Site;
 
       await this.updateOnboardingStatus(
         requestId,
@@ -123,11 +135,11 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
       );
 
       this.logger.log(
-        `Site created successfully - Internal ID: ${savedSite.id}, Customer ID: ${savedSite.siteId}`,
+        `Site created successfully - Customer: ${request.customerId}, Internal ID: ${savedSite.id}, Customer ID: ${savedSite.siteId}`,
       );
 
       // Check for buildings waiting on this site (using customer siteId)
-      await this.processWaitingBuildings(savedSite.siteId);
+      await this.processWaitingBuildings(request.customerId, savedSite.siteId);
     } catch (error) {
       this.logger.error('Failed to create site', error);
       throw error;
@@ -136,9 +148,26 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
 
   private async processBuilding(requestId: string, data: any): Promise<void> {
     try {
+      // Get customer ID from onboarding request
+      const request = await this.onboardingRequestRepository.findOne({
+        where: { id: requestId },
+      });
+
+      if (!request) {
+        throw new Error(`Onboarding request not found: ${requestId}`);
+      }
+
+      // Get customer-specific repositories
+      const siteRepository = await this.customerDatabaseService.getSiteRepository(
+        request.customerId,
+      );
+      const buildingRepository = await this.customerDatabaseService.getBuildingRepository(
+        request.customerId,
+      );
+
       // Check if building has a parent site dependency
       if (data.parentSiteId) {
-        const parentSite = await this.siteRepository.findOne({
+        const parentSite = await siteRepository.findOne({
           where: { siteId: data.parentSiteId },
         });
 
@@ -153,7 +182,7 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
           );
 
           this.logger.log(
-            `Building onboarding on hold - waiting for site: ${data.parentSiteId}`,
+            `Building onboarding on hold - Customer: ${request.customerId}, waiting for site: ${data.parentSiteId}`,
           );
           return;
         }
@@ -162,8 +191,8 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
         data.siteInternalId = parentSite.id;
       }
 
-      const building = this.buildingRepository.create(data);
-      const savedBuilding = (await this.buildingRepository.save(building)) as unknown as Building;
+      const building = buildingRepository.create(data);
+      const savedBuilding = (await buildingRepository.save(building)) as unknown as Building;
 
       await this.updateOnboardingStatus(
         requestId,
@@ -173,7 +202,7 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
       );
 
       this.logger.log(
-        `Building created successfully - Internal ID: ${savedBuilding.id}, Customer ID: ${savedBuilding.buildingId}`,
+        `Building created successfully - Customer: ${request.customerId}, Internal ID: ${savedBuilding.id}, Customer ID: ${savedBuilding.buildingId}`,
       );
     } catch (error) {
       this.logger.error('Failed to create building', error);
@@ -196,11 +225,12 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
     });
   }
 
-  private async processWaitingBuildings(siteId: string): Promise<void> {
+  private async processWaitingBuildings(customerId: string, siteId: string): Promise<void> {
     try {
       // Find all buildings waiting for this site
       const waitingBuildings = await this.onboardingRequestRepository.find({
         where: {
+          customerId,
           entityType: EntityType.BUILDING,
           status: OnboardingStatus.ON_HOLD,
           dependsOnSiteId: siteId,
@@ -212,7 +242,7 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
       }
 
       this.logger.log(
-        `Found ${waitingBuildings.length} buildings waiting for site ${siteId}. Processing...`,
+        `Found ${waitingBuildings.length} buildings waiting for site ${siteId} (customer: ${customerId}). Processing...`,
       );
 
       // Process each waiting building

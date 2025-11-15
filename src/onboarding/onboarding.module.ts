@@ -6,12 +6,14 @@ import { OnboardingService } from './onboarding.service';
 import { OnboardingSchedulerService } from './onboarding-scheduler.service';
 import { KafkaModule } from '../kafka/kafka.module';
 import { SchemaModule } from '../schemas/schema.module';
-import { OnboardingRequest, Site, Building } from '../entities';
+import { DatabaseModule } from '../database/database.module';
+import { OnboardingRequest } from '../entities';
 
 @Module({
   imports: [
     ConfigModule,
-    TypeOrmModule.forFeature([OnboardingRequest, Site, Building]),
+    TypeOrmModule.forFeature([OnboardingRequest]),
+    DatabaseModule,
     KafkaModule,
     SchemaModule,
   ],

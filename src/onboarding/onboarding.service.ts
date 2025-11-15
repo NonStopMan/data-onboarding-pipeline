@@ -32,7 +32,7 @@ export class OnboardingService {
     const requestId = uuidv4();
 
     // Get customer schema
-    const siteSchema = this.schemaRegistry.getSiteSchema(customerId);
+    const siteSchema = await this.schemaRegistry.getSiteSchema(customerId);
 
     // Validate against customer schema
     this.schemaValidator.validate(customerData, siteSchema);
@@ -45,6 +45,7 @@ export class OnboardingService {
     // Create onboarding request record
     const onboardingRequest = this.onboardingRequestRepository.create({
       id: requestId,
+      customerId,
       entityType: EntityType.SITE,
       status: OnboardingStatus.VALIDATED,
       data: internalData,
@@ -87,7 +88,7 @@ export class OnboardingService {
     const requestId = uuidv4();
 
     // Get customer schema
-    const buildingSchema = this.schemaRegistry.getBuildingSchema(customerId);
+    const buildingSchema = await this.schemaRegistry.getBuildingSchema(customerId);
 
     // Validate against customer schema
     this.schemaValidator.validate(customerData, buildingSchema);
@@ -100,6 +101,7 @@ export class OnboardingService {
     // Create onboarding request record
     const onboardingRequest = this.onboardingRequestRepository.create({
       id: requestId,
+      customerId,
       entityType: EntityType.BUILDING,
       status: OnboardingStatus.VALIDATED,
       data: internalData,

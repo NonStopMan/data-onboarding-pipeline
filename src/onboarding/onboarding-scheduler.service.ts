@@ -6,9 +6,9 @@ import {
   OnboardingRequest,
   OnboardingStatus,
   EntityType,
-  Site,
   Building,
 } from '../entities';
+import { CustomerDatabaseService } from '../database/customer-database.service';
 
 @Injectable()
 export class OnboardingSchedulerService {
@@ -17,10 +17,7 @@ export class OnboardingSchedulerService {
   constructor(
     @InjectRepository(OnboardingRequest)
     private onboardingRequestRepository: Repository<OnboardingRequest>,
-    @InjectRepository(Site)
-    private siteRepository: Repository<Site>,
-    @InjectRepository(Building)
-    private buildingRepository: Repository<Building>,
+    private customerDatabaseService: CustomerDatabaseService,
   ) {}
 
   // Run every 30 seconds to check for ON_HOLD buildings
@@ -54,7 +51,7 @@ export class OnboardingSchedulerService {
     buildingRequest: OnboardingRequest,
   ): Promise<void> {
     try {
-      const { dependsOnSiteId, data } = buildingRequest;
+      const { customerId, dependsOnSiteId, data } = buildingRequest;
 
       if (!dependsOnSiteId) {
         this.logger.warn(
@@ -63,14 +60,22 @@ export class OnboardingSchedulerService {
         return;
       }
 
+      // Get customer-specific repositories
+      const siteRepository = await this.customerDatabaseService.getSiteRepository(
+        customerId,
+      );
+      const buildingRepository = await this.customerDatabaseService.getBuildingRepository(
+        customerId,
+      );
+
       // Check if the parent site exists now (by customer siteId)
-      const parentSite = await this.siteRepository.findOne({
+      const parentSite = await siteRepository.findOne({
         where: { siteId: dependsOnSiteId },
       });
 
       if (parentSite) {
         this.logger.log(
-          `Parent site ${dependsOnSiteId} is ready. Processing building ${buildingRequest.id}`,
+          `Parent site ${dependsOnSiteId} is ready. Processing building ${buildingRequest.id} (customer: ${customerId})`,
         );
 
         // Update status to PROCESSING
@@ -82,8 +87,8 @@ export class OnboardingSchedulerService {
         data.siteInternalId = parentSite.id;
 
         // Create the building
-        const building = this.buildingRepository.create(data);
-        const savedBuilding = (await this.buildingRepository.save(
+        const building = buildingRepository.create(data);
+        const savedBuilding = (await buildingRepository.save(
           building,
         )) as unknown as Building;
 
@@ -95,11 +100,11 @@ export class OnboardingSchedulerService {
         });
 
         this.logger.log(
-          `Building ${buildingRequest.id} successfully created - Internal ID: ${savedBuilding.id}, Customer ID: ${savedBuilding.buildingId}`,
+          `Building ${buildingRequest.id} successfully created - Customer: ${customerId}, Internal ID: ${savedBuilding.id}, Customer ID: ${savedBuilding.buildingId}`,
         );
       } else {
         this.logger.debug(
-          `Parent site ${dependsOnSiteId} still not available for building ${buildingRequest.id}`,
+          `Parent site ${dependsOnSiteId} still not available for building ${buildingRequest.id} (customer: ${customerId})`,
         );
       }
     } catch (error) {

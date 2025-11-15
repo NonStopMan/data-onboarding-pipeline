@@ -31,7 +31,9 @@ A scalable NestJS-based data onboarding API that accepts customer data (sites an
 
 - RESTful API endpoints for data onboarding
 - **Interactive Swagger/OpenAPI documentation** at `/api/docs`
-- **Customer-specific schema mapping** - Support different data formats per customer
+- **Multi-tenant architecture** - Database instance per customer for data isolation
+- **Customer-specific schema mapping** - Support different data formats per customer stored in database
+- **Admin APIs** - Manage customers and schema mappings dynamically
 - Schema-based validation using class-validator
 - Asynchronous processing with Kafka
 - Real-time status tracking of onboarding requests
@@ -81,10 +83,22 @@ This will start:
 - Zookeeper on port `2181`
 - Kafka UI on port `8080` (accessible at http://localhost:8080)
 
+### Setup Databases
+
+Create the master and customer databases:
+
+```bash
+npm run setup:db
+```
+
+This creates:
+- `master_onboarding` - Stores customer configurations and schema mappings
+- `data_onboarding` - Default customer database for data storage
+
 ### Start the Application
 
 ```bash
-# Development mode with hot-reload
+# Development mode with hot-reload (auto-creates tables)
 npm run start:dev
 
 # Production mode
@@ -94,6 +108,19 @@ npm run start:prod
 The API will be available at `http://localhost:3000`
 
 **Swagger Documentation**: Visit `http://localhost:3000/api/docs` for interactive API documentation.
+
+### Seed Master Database
+
+After starting the application for the first time (which creates tables), seed the master database with default customer and schema mappings:
+
+```bash
+npm run seed:master
+```
+
+This creates:
+- Default customer configuration
+- Schema field mappings for sites and buildings
+- Allows immediate use of the onboarding API
 
 ## API Endpoints
 
@@ -275,98 +302,135 @@ This allows customers to use their own ID scheme while the system maintains inte
 ### OnboardingRequest
 
 - `id`: UUID (auto-generated)
+- `customerId`: string (customer identifier)
 - `entityType`: enum (SITE, BUILDING)
-- `status`: enum (PENDING, VALIDATING, VALIDATED, PROCESSING, COMPLETED, FAILED)
+- `status`: enum (PENDING, VALIDATING, VALIDATED, PROCESSING, ON_HOLD, COMPLETED, FAILED)
 - `data`: JSON object
 - `errorMessage`: string (nullable)
 - `entityId`: UUID (nullable, references the created entity)
+- `dependsOnSiteId`: string (nullable, for ON_HOLD buildings)
 - `createdAt`: timestamp
 - `updatedAt`: timestamp
 
+## Multi-Tenant Architecture
+
+The system implements a **database-per-customer** multi-tenant architecture for complete data isolation:
+
+### Architecture Components
+
+1. **Master Database** (`master_onboarding`):
+   - Stores customer configurations (connection details, settings)
+   - Stores schema field mappings per customer
+   - Used by all application components for customer metadata
+
+2. **Customer Databases** (one per customer):
+   - Dedicated database instance per customer
+   - Stores customer's sites, buildings, and onboarding requests
+   - Complete data isolation between customers
+   - Dynamic connection management
+
+3. **Dynamic Database Connections**:
+   - CustomerDatabaseService creates connections on-demand
+   - Caches connections for performance
+   - Repository access per customer
+
+### Admin APIs
+
+Manage customers and schema mappings through admin endpoints:
+
+#### Create Customer
+```bash
+POST /admin/customers
+{
+  "customerId": "customer-b",
+  "customerName": "Customer B Corp",
+  "dbHost": "localhost",
+  "dbPort": 5432,
+  "dbName": "customer_b_db",
+  "dbUsername": "postgres",
+  "dbPassword": "postgres",
+  "isActive": true
+}
+```
+
+#### Create Schema Mapping
+```bash
+POST /admin/customers/customer-b/schema-mappings
+{
+  "entityType": "site",
+  "customerField": "location_name",
+  "internalField": "name",
+  "fieldType": "string",
+  "isRequired": true
+}
+```
+
+#### Get Customer Schema Mappings
+```bash
+GET /admin/customers/customer-b/schema-mappings
+```
+
+#### List All Customers
+```bash
+GET /admin/customers
+```
+
 ## Customer Schema Mapping
 
-The system supports different data formats for each customer through a flexible schema mapping system. Each customer can use their own field names, and the system automatically validates and transforms the data to our internal schema.
+The system supports different data formats for each customer through a flexible schema mapping system stored in the database. Each customer can use their own field names, and the system automatically validates and transforms the data to our internal schema.
 
 ### How It Works
 
 1. **Customer Identification**: Include `x-customer-id` header in requests (defaults to "default")
-2. **Schema Validation**: Incoming data is validated against the customer's schema
-3. **Field Mapping**: Customer fields are mapped to internal schema
-4. **Processing**: Data is processed using standardized internal schema
+2. **Schema Loading**: Schema is loaded from database for the specified customer
+3. **Schema Validation**: Incoming data is validated against the customer's schema
+4. **Field Mapping**: Customer fields are mapped to internal schema
+5. **Processing**: Data is processed using standardized internal schema
+6. **Storage**: Data stored in customer-specific database
 
-### Supported Customers
+### Example: Creating a Custom Customer
 
-- `default` - Uses standard field names (name, address, etc.)
-- `customer-a` - Custom mapping example (siteName → name, streetAddress → address, etc.)
-
-### Example: Customer-Specific Schema
-
-**Customer A Schema (different field names):**
 ```bash
+# 1. Create customer database (PostgreSQL)
+createdb customer_acme
+
+# 2. Register customer via API
+curl -X POST http://localhost:3000/admin/customers \
+  -H "Content-Type: application/json" \
+  -d '{
+    "customerId": "acme",
+    "customerName": "ACME Corp",
+    "dbHost": "localhost",
+    "dbPort": 5432,
+    "dbName": "customer_acme",
+    "dbUsername": "postgres",
+    "dbPassword": "postgres"
+  }'
+
+# 3. Add schema mappings (example: site)
+curl -X POST http://localhost:3000/admin/customers/acme/schema-mappings \
+  -H "Content-Type: application/json" \
+  -d '{
+    "entityType": "site",
+    "customerField": "location_id",
+    "internalField": "siteId",
+    "fieldType": "string",
+    "isRequired": true
+  }'
+
+# 4. Use customer-specific API
 curl -X POST http://localhost:3000/onboarding/site \
   -H "Content-Type: application/json" \
-  -H "x-customer-id: customer-a" \
+  -H "x-customer-id: acme" \
   -d '{
-    "siteId": "SITE-001",
-    "siteName": "Main Campus",          // Maps to: name
-    "streetAddress": "123 Main St",     // Maps to: address
-    "cityName": "San Francisco",        // Maps to: city
-    "stateCode": "CA",                  // Maps to: state
-    "postalCode": "94102",              // Maps to: zipCode
-    "countryName": "USA",               // Maps to: country
-    "lat": 37.7749,                     // Maps to: latitude
-    "lng": -122.4194                    // Maps to: longitude
+    "location_id": "LOC-001",
+    "location_name": "Main Office"
   }'
 ```
 
-**Default Schema (standard field names):**
-```bash
-curl -X POST http://localhost:3000/onboarding/site \
-  -H "Content-Type: application/json" \
-  -H "x-customer-id: default" \
-  -d '{
-    "siteId": "SITE-001",
-    "name": "Main Campus",
-    "address": "123 Main St",
-    "city": "San Francisco",
-    "state": "CA",
-    "zipCode": "94102",
-    "country": "USA",
-    "latitude": 37.7749,
-    "longitude": -122.4194
-  }'
-```
+### Default Customer
 
-Both requests create the same site internally, demonstrating how different customers can use different field names.
-
-### Adding New Customer Schemas
-
-To add a new customer schema:
-
-1. Create a schema definition in `src/schemas/customer-schemas/`
-2. Define field mappings from customer fields to internal fields
-3. Register the schema in `SchemaRegistryService`
-4. Customers can now use their custom field names with `x-customer-id` header
-
-Example schema definition:
-```typescript
-export const MyCustomerSchema: CustomerSchema = {
-  customerId: 'my-customer',
-  customerName: 'My Customer',
-  siteSchema: {
-    entity: 'site',
-    fields: [
-      {
-        customerField: 'location_id',     // Customer's field name
-        internalField: 'siteId',          // Our internal field name
-        type: FieldType.STRING,
-        required: true,
-      },
-      // ... more field mappings
-    ],
-  },
-};
-```
+After seeding, a `default` customer is created with standard field mappings that match internal field names (no transformation needed).
 
 ## Environment Variables
 
@@ -374,11 +438,19 @@ export const MyCustomerSchema: CustomerSchema = {
 |----------|-------------|---------|
 | `PORT` | Application port | `3000` |
 | `NODE_ENV` | Environment mode | `development` |
-| `DB_HOST` | PostgreSQL host | `localhost` |
-| `DB_PORT` | PostgreSQL port | `5432` |
-| `DB_USERNAME` | PostgreSQL username | `postgres` |
-| `DB_PASSWORD` | PostgreSQL password | `postgres` |
-| `DB_DATABASE` | PostgreSQL database name | `data_onboarding` |
+| **Master Database** |
+| `MASTER_DB_HOST` | Master database host | `localhost` |
+| `MASTER_DB_PORT` | Master database port | `5432` |
+| `MASTER_DB_USERNAME` | Master database username | `postgres` |
+| `MASTER_DB_PASSWORD` | Master database password | `postgres` |
+| `MASTER_DB_DATABASE` | Master database name | `master_onboarding` |
+| **Default Customer Database** |
+| `DB_HOST` | Default customer database host | `localhost` |
+| `DB_PORT` | Default customer database port | `5432` |
+| `DB_USERNAME` | Default customer database username | `postgres` |
+| `DB_PASSWORD` | Default customer database password | `postgres` |
+| `DB_DATABASE` | Default customer database name | `data_onboarding` |
+| **Kafka** |
 | `KAFKA_CLIENT_ID` | Kafka client ID | `data-onboarding-api` |
 | `KAFKA_BROKERS` | Kafka broker addresses | `localhost:9092` |
 | `KAFKA_CONSUMER_GROUP` | Kafka consumer group | `data-onboarding-consumer` |
@@ -457,24 +529,41 @@ docker exec -it data-onboarding-postgres psql -U postgres -d data_onboarding
 
 ```
 src/
-├── entities/              # TypeORM entities
+├── entities/                    # Customer database entities
 │   ├── site.entity.ts
 │   ├── building.entity.ts
 │   └── onboarding-request.entity.ts
-├── dto/                   # Data Transfer Objects with validation
+├── master-entities/             # Master database entities
+│   ├── customer.entity.ts
+│   └── schema-field-mapping.entity.ts
+├── database/                    # Database management
+│   ├── customer-database.service.ts
+│   ├── database.module.ts
+│   └── seed-master-db.ts
+├── schemas/                     # Schema mapping system
+│   ├── schema-registry.service.ts
+│   ├── schema-validator.service.ts
+│   ├── schema-mapper.service.ts
+│   └── schema-types.ts
+├── admin/                       # Admin APIs
+│   ├── admin.controller.ts
+│   ├── admin.service.ts
+│   └── dto/
+├── dto/                         # Data Transfer Objects
 │   ├── create-site.dto.ts
 │   ├── create-building.dto.ts
 │   └── onboarding-response.dto.ts
-├── kafka/                 # Kafka producer and consumer
+├── kafka/                       # Kafka producer and consumer
 │   ├── kafka-producer.service.ts
 │   ├── kafka-consumer.service.ts
 │   └── kafka.module.ts
-├── onboarding/           # Onboarding API
+├── onboarding/                  # Onboarding API
 │   ├── onboarding.controller.ts
 │   ├── onboarding.service.ts
+│   ├── onboarding-scheduler.service.ts
 │   └── onboarding.module.ts
-├── app.module.ts         # Root module
-└── main.ts               # Application entry point
+├── app.module.ts                # Root module
+└── main.ts                      # Application entry point
 ```
 
 ## Troubleshooting

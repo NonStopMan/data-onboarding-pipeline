@@ -26,6 +26,9 @@ export class OnboardingRequest {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Column()
+  customerId: string;
+
   @Column({
     type: 'enum',
     enum: EntityType,
