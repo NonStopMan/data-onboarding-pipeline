@@ -30,6 +30,7 @@ A scalable NestJS-based data onboarding API that accepts customer data (sites an
 ## Features
 
 - RESTful API endpoints for data onboarding
+- **Interactive Swagger/OpenAPI documentation** at `/api/docs`
 - Schema-based validation using class-validator
 - Asynchronous processing with Kafka
 - Real-time status tracking of onboarding requests
@@ -90,6 +91,8 @@ npm run start:prod
 ```
 
 The API will be available at `http://localhost:3000`
+
+**Swagger Documentation**: Visit `http://localhost:3000/api/docs` for interactive API documentation.
 
 ## API Endpoints
 
