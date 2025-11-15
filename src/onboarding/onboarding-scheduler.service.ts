@@ -63,9 +63,9 @@ export class OnboardingSchedulerService {
         return;
       }
 
-      // Check if the parent site exists now
+      // Check if the parent site exists now (by customer siteId)
       const parentSite = await this.siteRepository.findOne({
-        where: { id: dependsOnSiteId },
+        where: { siteId: dependsOnSiteId },
       });
 
       if (parentSite) {
@@ -77,6 +77,9 @@ export class OnboardingSchedulerService {
         await this.onboardingRequestRepository.update(buildingRequest.id, {
           status: OnboardingStatus.PROCESSING,
         });
+
+        // Add the internal site ID for the relationship
+        data.siteInternalId = parentSite.id;
 
         // Create the building
         const building = this.buildingRepository.create(data);
@@ -92,7 +95,7 @@ export class OnboardingSchedulerService {
         });
 
         this.logger.log(
-          `Building ${buildingRequest.id} successfully created with ID: ${savedBuilding.id}`,
+          `Building ${buildingRequest.id} successfully created - Internal ID: ${savedBuilding.id}, Customer ID: ${savedBuilding.buildingId}`,
         );
       } else {
         this.logger.debug(

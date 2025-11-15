@@ -11,6 +11,14 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateSiteDto {
   @ApiProperty({
+    description: 'Customer-provided unique identifier for the site',
+    example: 'SITE-001',
+  })
+  @IsString()
+  @IsNotEmpty()
+  siteId: string;
+
+  @ApiProperty({
     description: 'The name of the site',
     example: 'Main Campus',
   })

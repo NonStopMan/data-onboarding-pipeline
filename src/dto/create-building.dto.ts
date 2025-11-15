@@ -11,6 +11,14 @@ import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class CreateBuildingDto {
   @ApiProperty({
+    description: 'Customer-provided unique identifier for the building',
+    example: 'BLDG-001',
+  })
+  @IsString()
+  @IsNotEmpty()
+  buildingId: string;
+
+  @ApiProperty({
     description: 'The name of the building',
     example: 'Building A',
   })
@@ -59,10 +67,10 @@ export class CreateBuildingDto {
   metadata?: Record<string, any>;
 
   @ApiPropertyOptional({
-    description: 'UUID of the site this building belongs to. If the site does not exist yet, the building onboarding will be put ON_HOLD until the site is created.',
-    example: '550e8400-e29b-41d4-a716-446655440000',
+    description: 'Customer-provided site ID that this building belongs to. If the site does not exist yet, the building onboarding will be put ON_HOLD until the site is created.',
+    example: 'SITE-001',
   })
-  @IsUUID()
+  @IsString()
   @IsOptional()
-  siteId?: string;
+  parentSiteId?: string;
 }

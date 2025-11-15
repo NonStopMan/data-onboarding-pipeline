@@ -122,10 +122,12 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
         savedSite.id,
       );
 
-      this.logger.log(`Site created successfully with ID: ${savedSite.id}`);
+      this.logger.log(
+        `Site created successfully - Internal ID: ${savedSite.id}, Customer ID: ${savedSite.siteId}`,
+      );
 
-      // Check for buildings waiting on this site
-      await this.processWaitingBuildings(savedSite.id);
+      // Check for buildings waiting on this site (using customer siteId)
+      await this.processWaitingBuildings(savedSite.siteId);
     } catch (error) {
       this.logger.error('Failed to create site', error);
       throw error;
@@ -135,9 +137,9 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
   private async processBuilding(requestId: string, data: any): Promise<void> {
     try {
       // Check if building has a parent site dependency
-      if (data.siteId) {
+      if (data.parentSiteId) {
         const parentSite = await this.siteRepository.findOne({
-          where: { id: data.siteId },
+          where: { siteId: data.parentSiteId },
         });
 
         if (!parentSite) {
@@ -145,16 +147,19 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
           await this.updateOnboardingStatus(
             requestId,
             OnboardingStatus.ON_HOLD,
-            `Waiting for parent site with ID: ${data.siteId}`,
+            `Waiting for parent site with ID: ${data.parentSiteId}`,
             undefined,
-            data.siteId,
+            data.parentSiteId,
           );
 
           this.logger.log(
-            `Building onboarding on hold - waiting for site: ${data.siteId}`,
+            `Building onboarding on hold - waiting for site: ${data.parentSiteId}`,
           );
           return;
         }
+
+        // Site exists, add the internal site ID for the relationship
+        data.siteInternalId = parentSite.id;
       }
 
       const building = this.buildingRepository.create(data);
@@ -167,7 +172,9 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
         savedBuilding.id,
       );
 
-      this.logger.log(`Building created successfully with ID: ${savedBuilding.id}`);
+      this.logger.log(
+        `Building created successfully - Internal ID: ${savedBuilding.id}, Customer ID: ${savedBuilding.buildingId}`,
+      );
     } catch (error) {
       this.logger.error('Failed to create building', error);
       throw error;

@@ -105,6 +105,7 @@ Submit a new site for onboarding.
 **Request Body:**
 ```json
 {
+  "siteId": "SITE-001",
   "name": "Main Campus",
   "address": "123 Main Street",
   "city": "San Francisco",
@@ -140,12 +141,13 @@ Submit a new building for onboarding.
 **Request Body:**
 ```json
 {
+  "buildingId": "BLDG-001",
   "name": "Building A",
   "buildingType": "Office",
   "floors": 10,
   "squareFootage": 50000,
   "constructionDate": "2020-01-15",
-  "siteId": "550e8400-e29b-41d4-a716-446655440000",
+  "parentSiteId": "SITE-001",
   "metadata": {
     "hasParking": true,
     "parkingSpaces": 200
@@ -221,7 +223,7 @@ The onboarding process follows these statuses:
 ### Dependency Handling
 
 **Buildings with Parent Sites:**
-- When a building references a parent site via `siteId`, the system checks if the site exists
+- When a building references a parent site via `parentSiteId`, the system checks if the site exists
 - If the site doesn't exist yet, the building onboarding is put **ON_HOLD**
 - A scheduled task runs every 30 seconds to check if parent sites are ready
 - Once the parent site is created, waiting buildings are automatically processed
@@ -229,10 +231,20 @@ The onboarding process follows these statuses:
 
 ## Data Models
 
+### Dual ID System
+
+The system uses two types of identifiers for each entity:
+
+1. **Internal ID (`id`)**: Auto-generated UUID managed by the database (primary key)
+2. **Customer ID (`siteId`, `buildingId`)**: User-provided unique identifier for tracking and relationships
+
+This allows customers to use their own ID scheme while the system maintains internal referential integrity.
+
 ### Site
 
-- `id`: UUID (auto-generated)
-- `name`: string (required, unique)
+- `id`: UUID (internal, auto-generated primary key)
+- `siteId`: string (required, unique, customer-provided identifier)
+- `name`: string (required)
 - `address`: string (required)
 - `city`: string (optional)
 - `state`: string (optional)
@@ -246,13 +258,15 @@ The onboarding process follows these statuses:
 
 ### Building
 
-- `id`: UUID (auto-generated)
+- `id`: UUID (internal, auto-generated primary key)
+- `buildingId`: string (required, unique, customer-provided identifier)
 - `name`: string (required)
 - `buildingType`: string (optional)
 - `floors`: number (optional)
 - `squareFootage`: number (optional)
 - `constructionDate`: date (optional)
-- `siteId`: UUID (optional, foreign key to Site)
+- `parentSiteId`: string (optional, references customer's `siteId`)
+- `siteInternalId`: UUID (internal, foreign key to Site.id)
 - `metadata`: JSON object (optional)
 - `createdAt`: timestamp
 - `updatedAt`: timestamp
@@ -307,6 +321,7 @@ npm run test:cov
 curl -X POST http://localhost:3000/onboarding/site \
   -H "Content-Type: application/json" \
   -d '{
+    "siteId": "SITE-002",
     "name": "Downtown Office",
     "address": "456 Market St",
     "city": "San Francisco",
@@ -327,10 +342,12 @@ curl http://localhost:3000/onboarding/requests
 ```bash
 # Onboard a building
 http POST http://localhost:3000/onboarding/building \
+  buildingId="BLDG-002" \
   name="Building B" \
   buildingType="Warehouse" \
   floors:=5 \
-  squareFootage:=30000
+  squareFootage:=30000 \
+  parentSiteId="SITE-002"
 ```
 
 ## Monitoring

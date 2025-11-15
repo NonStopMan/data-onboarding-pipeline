@@ -14,6 +14,9 @@ export class Site {
   id: string;
 
   @Column({ unique: true })
+  siteId: string;
+
+  @Column()
   name: string;
 
   @Column()

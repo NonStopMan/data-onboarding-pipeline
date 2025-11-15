@@ -14,6 +14,9 @@ export class Building {
   @PrimaryGeneratedColumn('uuid')
   id: string;
 
+  @Column({ unique: true })
+  buildingId: string;
+
   @Column()
   name: string;
 
@@ -33,10 +36,13 @@ export class Building {
   metadata: Record<string, any>;
 
   @Column({ nullable: true })
-  siteId: string;
+  parentSiteId: string;
+
+  @Column({ nullable: true })
+  siteInternalId: string;
 
   @ManyToOne(() => Site, (site) => site.buildings)
-  @JoinColumn({ name: 'siteId' })
+  @JoinColumn({ name: 'siteInternalId' })
   site: Site;
 
   @CreateDateColumn()
