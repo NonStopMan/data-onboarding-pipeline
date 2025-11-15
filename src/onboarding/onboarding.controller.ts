@@ -4,6 +4,7 @@ import {
   Get,
   Body,
   Param,
+  Headers,
   ValidationPipe,
   HttpCode,
   HttpStatus,
@@ -15,6 +16,7 @@ import {
   ApiResponse,
   ApiParam,
   ApiBody,
+  ApiHeader,
 } from '@nestjs/swagger';
 import { OnboardingService } from './onboarding.service';
 import { CreateSiteDto, CreateBuildingDto, OnboardingResponseDto } from '../dto';
@@ -29,9 +31,26 @@ export class OnboardingController {
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
     summary: 'Onboard a new site',
-    description: 'Submit a new site for onboarding. The data will be validated and processed asynchronously via Kafka.',
+    description: 'Submit a new site for onboarding. The data will be validated against the customer schema and processed asynchronously via Kafka.',
   })
-  @ApiBody({ type: CreateSiteDto })
+  @ApiHeader({
+    name: 'x-customer-id',
+    description: 'Customer identifier for schema mapping (e.g., "customer-a", "default")',
+    required: false,
+    example: 'default',
+  })
+  @ApiBody({
+    description: 'Site data in customer-specific schema format',
+    schema: {
+      type: 'object',
+      example: {
+        siteId: 'SITE-001',
+        name: 'Main Campus',
+        address: '123 Main Street',
+        city: 'San Francisco',
+      },
+    },
+  })
   @ApiResponse({
     status: 202,
     description: 'Site onboarding request accepted and queued for processing',
@@ -42,19 +61,36 @@ export class OnboardingController {
     description: 'Bad request - validation failed',
   })
   async onboardSite(
-    @Body(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
-    createSiteDto: CreateSiteDto,
+    @Headers('x-customer-id') customerId: string = 'default',
+    @Body() customerData: any,
   ): Promise<OnboardingResponseDto> {
-    return await this.onboardingService.onboardSite(createSiteDto);
+    return await this.onboardingService.onboardSite(customerId, customerData);
   }
 
   @Post('building')
   @HttpCode(HttpStatus.ACCEPTED)
   @ApiOperation({
     summary: 'Onboard a new building',
-    description: 'Submit a new building for onboarding. The data will be validated and processed asynchronously via Kafka.',
+    description: 'Submit a new building for onboarding. The data will be validated against the customer schema and processed asynchronously via Kafka.',
   })
-  @ApiBody({ type: CreateBuildingDto })
+  @ApiHeader({
+    name: 'x-customer-id',
+    description: 'Customer identifier for schema mapping (e.g., "customer-a", "default")',
+    required: false,
+    example: 'default',
+  })
+  @ApiBody({
+    description: 'Building data in customer-specific schema format',
+    schema: {
+      type: 'object',
+      example: {
+        buildingId: 'BLDG-001',
+        name: 'Building A',
+        buildingType: 'Office',
+        parentSiteId: 'SITE-001',
+      },
+    },
+  })
   @ApiResponse({
     status: 202,
     description: 'Building onboarding request accepted and queued for processing',
@@ -65,10 +101,10 @@ export class OnboardingController {
     description: 'Bad request - validation failed',
   })
   async onboardBuilding(
-    @Body(new ValidationPipe({ whitelist: true, forbidNonWhitelisted: true }))
-    createBuildingDto: CreateBuildingDto,
+    @Headers('x-customer-id') customerId: string = 'default',
+    @Body() customerData: any,
   ): Promise<OnboardingResponseDto> {
-    return await this.onboardingService.onboardBuilding(createBuildingDto);
+    return await this.onboardingService.onboardBuilding(customerId, customerData);
   }
 
   @Get('status/:requestId')

@@ -31,6 +31,7 @@ A scalable NestJS-based data onboarding API that accepts customer data (sites an
 
 - RESTful API endpoints for data onboarding
 - **Interactive Swagger/OpenAPI documentation** at `/api/docs`
+- **Customer-specific schema mapping** - Support different data formats per customer
 - Schema-based validation using class-validator
 - Asynchronous processing with Kafka
 - Real-time status tracking of onboarding requests
@@ -281,6 +282,91 @@ This allows customers to use their own ID scheme while the system maintains inte
 - `entityId`: UUID (nullable, references the created entity)
 - `createdAt`: timestamp
 - `updatedAt`: timestamp
+
+## Customer Schema Mapping
+
+The system supports different data formats for each customer through a flexible schema mapping system. Each customer can use their own field names, and the system automatically validates and transforms the data to our internal schema.
+
+### How It Works
+
+1. **Customer Identification**: Include `x-customer-id` header in requests (defaults to "default")
+2. **Schema Validation**: Incoming data is validated against the customer's schema
+3. **Field Mapping**: Customer fields are mapped to internal schema
+4. **Processing**: Data is processed using standardized internal schema
+
+### Supported Customers
+
+- `default` - Uses standard field names (name, address, etc.)
+- `customer-a` - Custom mapping example (siteName → name, streetAddress → address, etc.)
+
+### Example: Customer-Specific Schema
+
+**Customer A Schema (different field names):**
+```bash
+curl -X POST http://localhost:3000/onboarding/site \
+  -H "Content-Type: application/json" \
+  -H "x-customer-id: customer-a" \
+  -d '{
+    "siteId": "SITE-001",
+    "siteName": "Main Campus",          // Maps to: name
+    "streetAddress": "123 Main St",     // Maps to: address
+    "cityName": "San Francisco",        // Maps to: city
+    "stateCode": "CA",                  // Maps to: state
+    "postalCode": "94102",              // Maps to: zipCode
+    "countryName": "USA",               // Maps to: country
+    "lat": 37.7749,                     // Maps to: latitude
+    "lng": -122.4194                    // Maps to: longitude
+  }'
+```
+
+**Default Schema (standard field names):**
+```bash
+curl -X POST http://localhost:3000/onboarding/site \
+  -H "Content-Type: application/json" \
+  -H "x-customer-id: default" \
+  -d '{
+    "siteId": "SITE-001",
+    "name": "Main Campus",
+    "address": "123 Main St",
+    "city": "San Francisco",
+    "state": "CA",
+    "zipCode": "94102",
+    "country": "USA",
+    "latitude": 37.7749,
+    "longitude": -122.4194
+  }'
+```
+
+Both requests create the same site internally, demonstrating how different customers can use different field names.
+
+### Adding New Customer Schemas
+
+To add a new customer schema:
+
+1. Create a schema definition in `src/schemas/customer-schemas/`
+2. Define field mappings from customer fields to internal fields
+3. Register the schema in `SchemaRegistryService`
+4. Customers can now use their custom field names with `x-customer-id` header
+
+Example schema definition:
+```typescript
+export const MyCustomerSchema: CustomerSchema = {
+  customerId: 'my-customer',
+  customerName: 'My Customer',
+  siteSchema: {
+    entity: 'site',
+    fields: [
+      {
+        customerField: 'location_id',     // Customer's field name
+        internalField: 'siteId',          // Our internal field name
+        type: FieldType.STRING,
+        required: true,
+      },
+      // ... more field mappings
+    ],
+  },
+};
+```
 
 ## Environment Variables
 
