@@ -59,7 +59,7 @@ export class CreateBuildingDto {
   metadata?: Record<string, any>;
 
   @ApiPropertyOptional({
-    description: 'UUID of the site this building belongs to',
+    description: 'UUID of the site this building belongs to. If the site does not exist yet, the building onboarding will be put ON_HOLD until the site is created.',
     example: '550e8400-e29b-41d4-a716-446655440000',
   })
   @IsUUID()

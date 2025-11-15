@@ -123,6 +123,9 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
       );
 
       this.logger.log(`Site created successfully with ID: ${savedSite.id}`);
+
+      // Check for buildings waiting on this site
+      await this.processWaitingBuildings(savedSite.id);
     } catch (error) {
       this.logger.error('Failed to create site', error);
       throw error;
@@ -131,6 +134,29 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
 
   private async processBuilding(requestId: string, data: any): Promise<void> {
     try {
+      // Check if building has a parent site dependency
+      if (data.siteId) {
+        const parentSite = await this.siteRepository.findOne({
+          where: { id: data.siteId },
+        });
+
+        if (!parentSite) {
+          // Parent site doesn't exist yet, put building on hold
+          await this.updateOnboardingStatus(
+            requestId,
+            OnboardingStatus.ON_HOLD,
+            `Waiting for parent site with ID: ${data.siteId}`,
+            undefined,
+            data.siteId,
+          );
+
+          this.logger.log(
+            `Building onboarding on hold - waiting for site: ${data.siteId}`,
+          );
+          return;
+        }
+      }
+
       const building = this.buildingRepository.create(data);
       const savedBuilding = (await this.buildingRepository.save(building)) as unknown as Building;
 
@@ -153,11 +179,65 @@ export class KafkaConsumerService implements OnModuleInit, OnModuleDestroy {
     status: OnboardingStatus,
     errorMessage?: string,
     entityId?: string,
+    dependsOnSiteId?: string,
   ): Promise<void> {
     await this.onboardingRequestRepository.update(requestId, {
       status,
       errorMessage,
       entityId,
+      dependsOnSiteId,
     });
+  }
+
+  private async processWaitingBuildings(siteId: string): Promise<void> {
+    try {
+      // Find all buildings waiting for this site
+      const waitingBuildings = await this.onboardingRequestRepository.find({
+        where: {
+          entityType: EntityType.BUILDING,
+          status: OnboardingStatus.ON_HOLD,
+          dependsOnSiteId: siteId,
+        },
+      });
+
+      if (waitingBuildings.length === 0) {
+        return;
+      }
+
+      this.logger.log(
+        `Found ${waitingBuildings.length} buildings waiting for site ${siteId}. Processing...`,
+      );
+
+      // Process each waiting building
+      for (const waitingBuilding of waitingBuildings) {
+        try {
+          await this.updateOnboardingStatus(
+            waitingBuilding.id,
+            OnboardingStatus.PROCESSING,
+          );
+
+          await this.processBuilding(waitingBuilding.id, waitingBuilding.data);
+
+          this.logger.log(
+            `Successfully processed waiting building: ${waitingBuilding.id}`,
+          );
+        } catch (error) {
+          this.logger.error(
+            `Failed to process waiting building: ${waitingBuilding.id}`,
+            error,
+          );
+          await this.updateOnboardingStatus(
+            waitingBuilding.id,
+            OnboardingStatus.FAILED,
+            error.message,
+          );
+        }
+      }
+    } catch (error) {
+      this.logger.error(
+        `Failed to process waiting buildings for site: ${siteId}`,
+        error,
+      );
+    }
   }
 }

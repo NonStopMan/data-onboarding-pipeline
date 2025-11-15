@@ -11,6 +11,7 @@ export enum OnboardingStatus {
   VALIDATING = 'VALIDATING',
   VALIDATED = 'VALIDATED',
   PROCESSING = 'PROCESSING',
+  ON_HOLD = 'ON_HOLD',
   COMPLETED = 'COMPLETED',
   FAILED = 'FAILED',
 }
@@ -46,6 +47,9 @@ export class OnboardingRequest {
 
   @Column({ nullable: true })
   entityId: string;
+
+  @Column({ nullable: true })
+  dependsOnSiteId: string;
 
   @CreateDateColumn()
   createdAt: Date;

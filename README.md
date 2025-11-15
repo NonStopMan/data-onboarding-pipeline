@@ -214,8 +214,18 @@ The onboarding process follows these statuses:
 2. **VALIDATING**: Data is being validated
 3. **VALIDATED**: Data validation successful, sent to Kafka
 4. **PROCESSING**: Consumer is processing the data
-5. **COMPLETED**: Entity successfully created in database
-6. **FAILED**: An error occurred during processing
+5. **ON_HOLD**: Building is waiting for parent site to be created (buildings only)
+6. **COMPLETED**: Entity successfully created in database
+7. **FAILED**: An error occurred during processing
+
+### Dependency Handling
+
+**Buildings with Parent Sites:**
+- When a building references a parent site via `siteId`, the system checks if the site exists
+- If the site doesn't exist yet, the building onboarding is put **ON_HOLD**
+- A scheduled task runs every 30 seconds to check if parent sites are ready
+- Once the parent site is created, waiting buildings are automatically processed
+- Buildings can also be triggered immediately when their parent site is completed
 
 ## Data Models
 
