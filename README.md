@@ -69,25 +69,30 @@ Edit `.env` file if needed to customize configuration.
 
 ## Running the Application
 
-### Start Infrastructure Services
+### Option 1: Using Docker Compose (Recommended)
 
-Start PostgreSQL, Kafka, and Zookeeper using Docker Compose:
+Start all infrastructure services including PostgreSQL, Kafka, and Zookeeper:
 
 ```bash
 docker-compose up -d
 ```
 
-This will start:
-- PostgreSQL on port `5432`
-- Kafka on port `9092`
-- Zookeeper on port `2181`
-- Kafka UI on port `8080` (accessible at http://localhost:8080)
+This will automatically:
+- Create and start PostgreSQL on port `5432` with databases **automatically initialized**
+  - `master_onboarding` - Stores customer configurations and schema mappings
+  - `data_onboarding` - Default customer database for data storage
+- Start Kafka on port `9092`
+- Start Zookeeper on port `2181`
+- Start Kafka UI on port `8080` (accessible at http://localhost:8080)
 
-### Setup Databases
+**No manual database setup needed!** The databases are created automatically via initialization script.
 
-Create the master and customer databases:
+### Option 2: Using Local PostgreSQL
+
+If you have PostgreSQL installed locally (not using Docker):
 
 ```bash
+# Create the master and customer databases
 npm run setup:db
 ```
 
@@ -580,6 +585,29 @@ If you see Kafka connection errors:
 1. Check PostgreSQL is running: `docker-compose ps postgres`
 2. Verify credentials in `.env` file
 3. Test connection: `docker exec -it data-onboarding-postgres psql -U postgres`
+
+### Reinitializing Databases
+
+If you need to recreate the databases (e.g., after schema changes):
+
+**For Docker:**
+```bash
+# Remove the volume to trigger re-initialization
+docker-compose down -v
+docker-compose up -d
+# Wait for containers to be ready, then seed
+npm run seed:master
+```
+
+**For Local PostgreSQL:**
+```bash
+# Drop and recreate databases
+dropdb master_onboarding
+dropdb data_onboarding
+npm run setup:db
+npm run start:dev  # Creates tables
+npm run seed:master
+```
 
 ## Cleanup
 
